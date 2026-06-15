@@ -1,0 +1,235 @@
+
+	#''################################################################################
+	#                                                                                '#
+	#                             "PRE- Processing STEPS"                            '#
+	#                                                                                '#
+	#''################################################################################
+
+OPEN TERMINAL
+
+cd ATSOA
+ds9 &
+xgterm &
+cd
+ecl
+cd ATSOA 
+
+############################ ecl is iraf window on which we will be running all the iraf commands
+
+
+
+# #;#;  STEP 1: ----------------------------------
+
+	## At first see the dimention of your bias frame and object frame,
+
+   #### First get familiar with your data ( eg. with the size of your image which image is taken for what purpose etc. 
+
+dfits *.fits 
+
+ecl> imhead *.fits l+
+ 
+################  STEP2: To make Master Bias ( Only for Bias Images)
+
+ls BIAS* > bias.in
+imstat @bias.in ( remove the files having value of standard deviation deviating much from other files)
+
+
+noao.imred.ccdred
+
+epar zerocombine
+zerocombine ("@bias.in", output="mbias", combine="media", reject="minmax", ccdtype=" ", process=no,
+	  delete=no, clobber=no, scale="none", statsec="", nlow=0, nhigh=1, nkeep=1,
+	 mclip=yes, lsigma=3., hsigma=3., rdnoise="6.3", gain="1.8", snoise="0.",
+	  pclip=-0.5, blank=0.)
+
+############################## STEP3: To make bias subtracted frames (Object, Lamp, and Standard)
+
+noao.imred.ccdred
+
+ls Fe* OBJ*  halogen* > bs.in
+sed "s/.fits/b.fits/g" bs.in > bs.out
+
+epar ccdproc 
+
+ccdproc ("@bs.in",output="@bs.out", ccdtype=" ", max_cache=0, noproc=no, fixpix=no,
+	 overscan=no, trim=no, zerocor=yes, darkcor=no, flatcor=no, illumcor=no,
+         fringecor=no, readcor=no, scancor=no, readaxis="line", fixfile="",
+	 biassec="", trimsec="", zero="mbias.fits", dark="",
+	 flat="", illum="", fringe="", minreplace=1., scantype="shortscan", nscan=1,
+	 interactive=no, function="legendre", order=2, sample="*", naverage=1,
+	 niterate=1, low_reject=3., high_reject=3., grow=0.)
+
+
+############################# STEP4: To make Master Flat (only on flat images)
+
+noao.imred.ccdred
+
+ls halogen*b.fits > flat.in
+
+  epar flatcombine
+
+ flatcombine ("@flat.in",output="mflat.fits", combine="median", reject="minmax", ccdtype="",
+ 	     process=no, subsets=yes, delete=no, clobber=no, scale="mode", statsec="",
+ 	     nlow=1, nhigh=1, nkeep=1, mclip=yes, lsigma=3., hsigma=3., rdnoise="4.8",
+	     gain="1.22", snoise="0.", pclip=-0.5, blank=1.)	
+
+
+##################################### STEP5: To make Normalized Flat
+
+noao.imred.ccdred
+
+ epar response
+
+ response ("mflat","mflat", "nmflat", interactive=yes, threshold=INDEF, sample="*", naverage=1,
+ 	  function="spline3", order=6, low_reject=0., high_reject=0., niterate=1,
+ 	  grow=0., graphics="stdgraph", cursor="")
+
+ imstat nmflat.fits
+
+######################  STEP6: To make flat fielded image
+
+ls OBJ*b.fits > flatf.in
+sed "s/b.fits/bf.fits/g" flatf.in> flatf.out
+
+imarith @flatf.in / nmflat.fits @flatf.out
+
+
+
+
+
+#  ########################  STEP7: To trim image (object and standard) ( if over scan region is there then triming is required)
+
+# ls *b.fits > trim.out
+# sed "s/.fits/.fits[19:2067,*]/g" trim.out > trim.in
+# imcopy @trim.in @trim.out
+
+
+###############################  STEP8: To remove Cosmicrays (Object and Standard)
+
+ecl.stsdas
+
+task lacos_spec=/scisoft/share/iraf/extern/stsdas/lacos_spec.cl
+
+epar lacos
+
+lacos( input=J105829_250_3500_4_Grism_7_2015_06_17_yf170018bf.fits, output=J105829_250_3500_4_Grism_7_2015_06_17_yf170018bfc.fits, outmask=J105829_250_3500_4_Grism_7_2015_06_17_yf170018bf,gain=1.22,readn=4.8,xorder=9,
+      yorder=3,sigclip=4.5,sigfrac=0.5,objlim=1.,niter=10,verbose=yes)
+
+
+############################### To extract spectra of each source object. (object and standardstar)
+
+noao.imred.specred
+
+dispaxis=2
+
+
+apall (input="J105829_250_3500_4_Grism_7_2015_06_17_yf170018bfc.fits", output="J105829_250_3500_4_Grism_7_2015_06_17_yf170018apbfc.fits", 
+         apertures="", format="multispec", references="", profiles="",
+        interactive=yes, find=yes, recenter=yes, resize=yes, edit=yes, trace=yes,
+        fittrace=yes, extract=yes, extras=yes, review=yes, line=INDEF, nsum=20,
+        lower=-5., upper=5., apidtable="", b_function="chebyshev", b_order=1,
+        b_sample="-10:-6,6:10", b_naverage=-3, b_niterate=0, b_low_reject=3.,
+        b_high_rejec=3., b_grow=0., width=5., radius=10., threshold=0., minsep=5.,
+        maxsep=1000., order="increasing", aprecenter="", npeaks=INDEF, shift=yes,
+        llimit=INDEF, ulimit=INDEF, ylevel=0.1, peak=yes, bkg=yes, r_grow=0.,
+        avglimits=no, t_nsum=10, t_step=10, t_nlost=3, t_function="legendre",
+        t_order=2, t_sample="*", t_naverage=1, t_niterate=0, t_low_reject=3.,
+        t_high_rejec=3., t_grow=0., background="fit", skybox=1, weights="variance",
+        pfit="fit1d", clean=yes, saturation=INDEF, readnoise=4.8, gain=1.22,
+        lsigma=4., usigma=4., nsubaps=1)   
+}                                 				    
+	
+######################################### To extract spectra of Arc LAMP
+
+
+noao.imred.specred
+
+apall (input="FeAr_250_3500_4_Grism_7_2015_06_17_yf170019b.fits",output="FeAr_250_3500_4_Grism_7_2015_06_17_yf170019apb.fits", apertures="", format="multispec", references="J105829_250_3500_4_Grism_7_2015_06_17_yf170018bfc.fits", profiles="",
+        interactive=no, find=no, recenter=no, resize=no, edit=no, trace=no,
+        fittrace=no, extract=yes, extras=no, review=yes, line=INDEF, nsum=20,
+        lower=-5., upper=5., apidtable="", b_function="chebyshev", b_order=1,
+        b_sample="-10:-6,6:10", b_naverage=-3, b_niterate=0, b_low_reject=3.,
+        b_high_rejec=3., b_grow=0., width=5., radius=10., threshold=0., minsep=5.,
+        maxsep=1000., order="increasing", aprecenter="", npeaks=INDEF, shift=yes,
+        llimit=INDEF, ulimit=INDEF, ylevel=0.1, peak=yes, bkg=yes, r_grow=0.,
+        avglimits=no, t_nsum=10, t_step=10, t_nlost=3, t_function="legendre",
+        t_order=2, t_sample="*", t_naverage=1, t_niterate=0, t_low_reject=3.,
+        t_high_rejec=3., t_grow=0., background="none", skybox=1, weights="variance",
+        pfit="fit1d", clean=no, saturation=INDEF, readnoise=4.8, gain=1.22,
+        lsigma=4., usigma=4., nsubaps=1)   
+    
+
+
+####################################### For line identification
+
+noao.imred.specred
+
+identify (images="FeAr_250_3500_4_Grism_7_2015_06_17_yf170019apb.fits", section="middle line", database="database",
+coordlist="/home/guest/ATSOA/fear_new.dat", units="", nsum="10", match=10.,
+maxfeatures=50, zwidth=100., ftype="emission", fwidth=4., cradius=5.,
+threshold=0., minsep=2., function="spline3", order=1, sample="*", niterate=0,
+low_reject=3., high_reject=3., grow=0., autowrite=no, graphics="stdgraph",
+cursor="", crval="", cdelt="", aidpars="")
+
+
+                               
+############################ To edit header of Object Spectra				    
+
+
+
+nano.imred.specred
+
+hedit (images="J105829_250_3500_4_Grism_7_2015_06_17_yf170018apbfc.fits", fields="refspec1", value=FeAr_250_3500_4_Grism_7_2015_06_17_yf170019apb.fits, add=yes, addonly=no,
+delete=no, verify=no, show=yes, update=yes)
+
+############################ Dispcor
+
+
+
+nano.imred.specred
+
+dispco(input="J105829_250_3500_4_Grism_7_2015_06_17_yf170018apbfc.fits",output="J105829_250_3500_4_Grism_7_2015_06_17_yf170018apbfcw.fits",     
+        linearize=yes, database="database", table="", w1=INDEF,w2=INDEF, dw=INDEF, nw=INDEF, log=no, flux=yes, blank=0., samedisp=no,
+	  global=no, ignoreaps=no, confirm=yes, listonly=no, verbose=no, logfile="yes")
+
+
+##################################### Standard  (ecl> page onedstds$README: to check directory of the Standard star or http://stsdas.stsci.edu/cgi-bin/gethelp.cgi?onedstds)
+
+
+!ls *apbfcw.fits> air.in
+asthedit @air.in /home/cs/hct_files/airmass.dat       ###### To update Airmass of wavelength calibrated file.
+
+
+
+noao.imred.specred
+  
+
+standard(input= "OBJ_GD248_250_3500_4_Grism_7_yf170031apbfcw.fits", output=std, samesta= yes, beam_sw= no, apertur="",
+          extinct="/home/cs/hct_files/iao_extinction.dat", bandwid= INDEF, bandsep=INDEF, fnuzero=  3.6800000000000E-20,
+          caldir="/scisoft/share/iraf/iraf/noao/lib/onedstds/oke1990/",  interac= yes, graphic= "stdgraph",
+         star_nam="g191b2b", airmass =1.99, exptime =,900 answer = yes )
+
+
+
+###################################### Sensfunc
+
+
+  sensfunc (standard=std,  sensitiv=sens, apertures="", ignoreaps=no, logfile="logfile",
+	    extinction="/home/cs/hct_files/iao_extinction.dat", newextinctio="extinct.dat", observatory=" ",
+	    function="spline3", order=6, interactive=yes, graphs="sr",
+	     marks="plus cross box", colors="2 1 3 4", cursor="", device="stdgraph", answer=yes)
+
+
+######################################Calibrate
+
+
+  calibrate (input="J105829_250_3500_4_Grism_7_2015_06_17_yf170018apbfcw.fits", output="J105829_250_3500_4_Grism_7_2015_06_17_yf170018apbfcwf.fits", extinct=yes, flux=yes, extinction="/home/cs/hct_files/iao_extinction.dat", 
+           observatory=" ", ignoreaps=yes, sensitivity=sens, fnu=no, airmass=2.3, exptime=2700 ) 
+
+                       
+
+
+#####################FINSH BYE BYE
+
+
+
